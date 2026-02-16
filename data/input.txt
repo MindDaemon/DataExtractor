@@ -1,0 +1,2 @@
+Dies ist eine Testnachricht für das Netzwerksicherheits-Labor.
+Sie wird codiert, in Chunks über ICMP übertragen und auf der Empfängerseite rekonstruiert.
