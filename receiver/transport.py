@@ -1,7 +1,21 @@
 from __future__ import annotations
+from typing import Optional
+
 from scapy.all import IP, ICMP, Raw, send  # type: ignore
 from common.frame import Frame
 from common.config import TYPE_ACK, TYPE_NACK
+
+
+def extract_frame(pkt, peer_ip: str) -> Optional[Frame]:
+    if not pkt.haslayer(ICMP) or not pkt.haslayer(Raw) or not pkt.haslayer(IP):
+        return None
+    if pkt[IP].src != peer_ip:
+        return None
+    try:
+        return Frame.unpack(bytes(pkt[Raw].load))
+    except Exception:
+        return None
+
 
 def send_control(peer_ip: str, iface: str, msg_type: int, session_id: int, seq: int, total: int, payload: bytes = b"") -> None:
     frame = Frame(msg_type=msg_type, session_id=session_id, seq=seq, total=total, payload=payload)

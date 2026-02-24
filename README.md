@@ -1,19 +1,18 @@
-# Network Security Lab – ICMP Covert Channel (Educational Skeleton)
+# Network Security Lab – Covert Channel (Educational Skeleton)
 
-> **Lab-only project scaffold** for your university module.
 > The code is intentionally explicit and test-friendly (no stealth/evasion features).
 
 ## Goal
 Build two programs:
 
-- **Sender (Program A)**: read text, encode, chunk, send via ICMP payload
-- **Receiver (Program B)**: receive, verify integrity, reassemble, decode, print + write file
+- **Sender (Program A)**: read text, compress+encrypt, chunk, send via ICMP/DNS/ARP/SNMP payload
+- **Receiver (Program B)**: receive, verify integrity, reassemble, decrypt+decode, print + write file
 
-Additional requirements covered in this skeleton:
+Additional requirements covered:
 
 - integrity checks (CRC32 + final SHA-256)
 - basic error correction (ACK/NACK + retry)
-- `.pcap` generation from **both** programs
+- `.pcap` generation from both programs
 - clear architecture for documentation
 
 ## Quick Start
@@ -25,37 +24,69 @@ Additional requirements covered in this skeleton:
    pip install -r requirements.txt
    ```
 
-2. Terminal 1 (Receiver):
+2. Terminal 1 (Receiver, ICMP):
    ```bash
-   sudo python -m receiver.main --iface eth0 --peer 10.0.0.10 --out receiver/output/output.txt
+   sudo python -m receiver.main --method icmp --iface eth0 --peer 10.0.0.10 --out receiver/output/output.txt --psk "lab-shared-key"
    ```
 
-3. Terminal 2 (Sender):
+3. Terminal 2 (Sender, ICMP):
    ```bash
-   sudo python -m sender.main --iface eth0 --peer 10.0.0.20 --in data/input.txt
+   sudo python -m sender.main --method icmp --iface eth0 --peer 10.0.0.20 --in data/input.txt --psk "lab-shared-key"
    ```
 
-> Replace interface/IPs with your lab values.
+4. Optional DNS mode:
+   ```bash
+   sudo python -m receiver.main --method dns --iface eth0 --peer 10.0.0.10 --out receiver/output/output.txt --psk "lab-shared-key" --dns-domain exfil.lab
+   sudo python -m sender.main --method dns --iface eth0 --peer 10.0.0.20 --in data/input.txt --psk "lab-shared-key" --dns-domain exfil.lab
+   ```
+
+5. Optional ARP mode:
+   ```bash
+   sudo python -m receiver.main --method arp --iface eth0 --peer 10.0.0.10 --out receiver/output/output.txt --psk "lab-shared-key"
+   sudo python -m sender.main --method arp --iface eth0 --peer 10.0.0.20 --in data/input.txt --psk "lab-shared-key"
+   ```
+
+6. Optional SNMP mode:
+   ```bash
+   sudo python -m receiver.main --method snmp --iface eth0 --peer 10.0.0.10 --out receiver/output/output.txt --psk "lab-shared-key" --snmp-community public --snmp-oid 1.3.6.1.4.1.55555.1.0
+   sudo python -m sender.main --method snmp --iface eth0 --peer 10.0.0.20 --in data/input.txt --psk "lab-shared-key" --snmp-community public --snmp-oid 1.3.6.1.4.1.55555.1.0
+   ```
+
+> Replace interface/IPs with lab values.
 > Root rights are often required for raw capture/send operations.
+> `--psk` (or environment variable `NETSEC_PSK`) is required; there is no built-in default key.
+> DNS mode auto-reduces `--chunk-size` to fit DNS label limits.
+> You can set `--log-level DEBUG|INFO|WARNING|ERROR` on sender/receiver.
 
-## Project Layout
+## Current Project Layout
 
 ```text
 common/
   codec.py        # encoding/decoding pipeline
+  dns_tunnel.py   # DNS qname mapping helpers
   frame.py        # binary frame format
   integrity.py    # CRC32 + SHA-256
   capture.py      # start/stop pcap capture subprocess
   config.py       # constants and defaults
 sender/
   main.py         # Program A entry point
-  transport.py    # send + wait_for_ack logic
+  arp_transport.py# ARP send + wait_for_ack logic
+  transport.py    # ICMP send + wait_for_ack logic
+  dns_transport.py# DNS send + wait_for_ack logic
+  snmp_transport.py# SNMP send + wait_for_ack logic
 receiver/
   main.py         # Program B entry point
-  transport.py    # sniff loop + ACK/NACK replies
+  arp_transport.py# ARP parsing + ACK/NACK replies
+  transport.py    # ICMP parsing + ACK/NACK replies
+  dns_transport.py# DNS parsing + ACK/NACK replies
+  snmp_transport.py# SNMP parsing + ACK/NACK replies
 tests/
+  test_cli_validation.py
   test_codec.py
+  test_dns_tunnel.py
+  test_e2e_methods.py
   test_frame.py
+  test_transport_integration.py
 docs/
   architecture.md
 scripts/
@@ -63,8 +94,9 @@ scripts/
   run_receiver.sh
 ```
 
-## Notes for your report
+## Method Packet Shapes
 
-- Explain why ICMP was chosen (simplicity, observability in Wireshark, lab reliability).
-- Show packet examples from both pcap files (`sender_capture.pcap`, `receiver_capture.pcap`).
-- Document where integrity check fails and how retry resolves it.
+- ICMP: `IP / ICMP(Echo Request) / Raw(FrameBytes)`
+- DNS: `IP / UDP / DNS(qname=<base32(frame)>.<domain>)`
+- ARP: `Ether / ARP / Raw(FrameBytes)`
+- SNMP: `IP / UDP / SNMP(SetRequest/Response, varbind.value=FrameBytes)`

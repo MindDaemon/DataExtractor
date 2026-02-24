@@ -1,5 +1,4 @@
 from __future__ import annotations
-import time
 from typing import Optional
 
 from scapy.all import IP, ICMP, Raw, send, sniff  # type: ignore
@@ -25,9 +24,9 @@ def wait_for_ack(
     session_id: int,
     seq: int,
     timeout: float,
-) -> bool:
+) -> tuple[bool, str]:
     '''
-    Returns True for ACK, False for NACK/timeout.
+    Returns (True, "ACK") for ACK and (False, reason) for NACK/timeout.
     '''
     packets = sniff(
         iface=iface,
@@ -42,7 +41,8 @@ def wait_for_ack(
         if frame.session_id != session_id or frame.seq != seq:
             continue
         if frame.msg_type == TYPE_ACK:
-            return True
+            return True, "ACK"
         if frame.msg_type == TYPE_NACK:
-            return False
-    return False
+            reason = frame.payload.decode("utf-8", errors="replace") if frame.payload else "NACK"
+            return False, f"NACK:{reason}"
+    return False, "TIMEOUT"
