@@ -1,8 +1,8 @@
-# Network Security Lab – Covert Channel (Educational Skeleton)
+# Network Security – Educational Covert Channel
 
 > The code is intentionally explicit and test-friendly (no stealth/evasion features).
 
-## Goal
+## My Goal
 Build two programs:
 
 - **Sender (Program A)**: read text, compress+encrypt, chunk, send via ICMP/DNS/ARP/SNMP payload
@@ -100,3 +100,27 @@ scripts/
 - DNS: `IP / UDP / DNS(qname=<base32(frame)>.<domain>)`
 - ARP: `Ether / ARP / Raw(FrameBytes)`
 - SNMP: `IP / UDP / SNMP(SetRequest/Response, varbind.value=FrameBytes)`
+
+## Context: Stealth vs. Transparency
+
+### How attackers would approach this in practice (high-level)
+- In real incidents, attackers generally try to make traffic blend into expected protocol behavior.
+- The goal is to reduce detection likelihood by avoiding obvious, repetitive anomalies.
+- This project intentionally does **not** implement such evasion behavior.
+
+### Current project stance
+- The implementation is explicit, deterministic, and test-driven.
+- Protocol mappings are clear and easy to inspect in Wireshark/pcap.
+- Reliability and integrity are prioritized: framing, CRC checks, ACK/NACK retries, final SHA-256 check.
+
+### Why I chose this
+- My use-case requires correct protocol-based transfer, non-plaintext coding/encryption, integrity checks, error correction, and reproducible demonstration.
+- A transparent design improves technical explainability, grading clarity, and demo reliability.
+- It also supports the required documentation quality (architecture, mechanism descriptions, verification evidence).
+
+### Blue-team perspective: detection and mitigation
+- Build per-protocol baselines (ICMP, DNS, ARP, SNMP) and alert on deviations.
+- Apply egress controls and segmentation (restrict unnecessary protocol paths).
+- Monitor DNS/SNMP/ICMP telemetry and correlate with host/network context.
+- Use IDS/IPS/anomaly detection plus pcap review to identify suspicious payload patterns.
+- Enforce least privilege and hardening to reduce attacker foothold and lateral movement options.
