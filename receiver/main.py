@@ -246,7 +246,10 @@ def main() -> int:
         logger.info("SHA256: %s", got_sha)
         if expected_plain_sha:
             logger.info("Expected: %s", expected_plain_sha)
-            logger.info("Integrity: %s", "OK" if got_sha == expected_plain_sha else "MISMATCH")
+            if got_sha != expected_plain_sha:
+                logger.error("Integrity: MISMATCH")
+                return 3
+            logger.info("Integrity: OK")
         return 0
     finally:
         stop_capture(cap)
