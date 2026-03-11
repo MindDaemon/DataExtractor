@@ -16,15 +16,34 @@ def _first_question(dns) -> Optional[DNSQR]:
         return dns.qd
 
 
+def _extract_dns_layer(pkt) -> Optional[DNS]:
+    if not pkt.haslayer(IP) or not pkt.haslayer(UDP):
+        return None
+    if pkt.haslayer(DNS):
+        return pkt[DNS]
+    try:
+        payload = bytes(pkt[UDP].payload)
+    except Exception:
+        return None
+    if not payload:
+        return None
+    try:
+        return DNS(payload)
+    except Exception:
+        return None
+
+
 def extract_frame(pkt, peer_ip: str, dns_domain: str, dns_port: int = 53) -> Optional[Frame]:
-    if not pkt.haslayer(IP) or not pkt.haslayer(UDP) or not pkt.haslayer(DNS):
+    if not pkt.haslayer(IP) or not pkt.haslayer(UDP):
         return None
     if pkt[IP].src != peer_ip:
         return None
     if pkt[UDP].dport != dns_port:
         return None
 
-    dns = pkt[DNS]
+    dns = _extract_dns_layer(pkt)
+    if dns is None:
+        return None
     question = _first_question(dns)
     if question is None:
         return None
