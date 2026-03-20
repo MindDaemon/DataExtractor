@@ -165,6 +165,35 @@ def test_dns_receiver_extract_frame():
     assert parsed == frame
 
 
+def test_dns_custom_port_parses_from_live_packet_bytes(monkeypatch):
+    peer_ip = "10.0.0.2"
+    domain = "exfil.lab"
+    dns_port = 5300
+    session_id = 100
+    seq = 7
+    ack_frame = Frame(msg_type=TYPE_ACK, session_id=session_id, seq=seq, total=10, payload=b"")
+    live_pkt = IP(bytes(_dns_packet(peer_ip, ack_frame, domain=domain, port=dns_port)))
+
+    monkeypatch.setattr(sender_dns_transport, "sniff", lambda **kwargs: [live_pkt])
+    ok, status = sender_dns_transport.wait_for_ack(
+        iface="eth0",
+        peer_ip=peer_ip,
+        session_id=session_id,
+        seq=seq,
+        timeout=0.1,
+        dns_domain=domain,
+        dns_port=dns_port,
+    )
+    assert ok is True
+    assert status == "ACK"
+    assert receiver_dns_transport.extract_frame(
+        IP(bytes(_dns_packet(peer_ip, Frame(msg_type=TYPE_DATA, session_id=9, seq=2, total=4, payload=b"payload"), domain=domain, port=dns_port))),
+        peer_ip,
+        dns_domain=domain,
+        dns_port=dns_port,
+    ) == Frame(msg_type=TYPE_DATA, session_id=9, seq=2, total=4, payload=b"payload")
+
+
 def test_arp_send_frame_embeds_frame_bytes(monkeypatch):
     captured = {}
     frame = Frame(msg_type=TYPE_DATA, session_id=17, seq=1, total=1, payload=b"arp-test")
@@ -312,3 +341,35 @@ def test_snmp_receiver_extract_frame():
         snmp_community=community,
     )
     assert parsed == frame
+
+
+def test_snmp_custom_port_parses_from_live_packet_bytes(monkeypatch):
+    peer_ip = "10.0.0.2"
+    oid = "1.3.6.1.4.1.55555.1.0"
+    community = "public"
+    port = 1161
+    session_id = 77
+    seq = 4
+    ack_frame = Frame(msg_type=TYPE_ACK, session_id=session_id, seq=seq, total=9, payload=b"")
+    live_pkt = IP(bytes(_snmp_packet(peer_ip, ack_frame, oid=oid, community=community, port=port, response=True)))
+
+    monkeypatch.setattr(sender_snmp_transport, "sniff", lambda **kwargs: [live_pkt])
+    ok, status = sender_snmp_transport.wait_for_ack(
+        iface="eth0",
+        peer_ip=peer_ip,
+        session_id=session_id,
+        seq=seq,
+        timeout=0.1,
+        snmp_oid=oid,
+        snmp_port=port,
+        snmp_community=community,
+    )
+    assert ok is True
+    assert status == "ACK"
+    assert receiver_snmp_transport.extract_frame(
+        IP(bytes(_snmp_packet(peer_ip, Frame(msg_type=TYPE_DATA, session_id=6, seq=2, total=3, payload=b"snmp-data"), oid=oid, community=community, port=port, response=False))),
+        peer_ip=peer_ip,
+        snmp_oid=oid,
+        snmp_port=port,
+        snmp_community=community,
+    ) == Frame(msg_type=TYPE_DATA, session_id=6, seq=2, total=3, payload=b"snmp-data")

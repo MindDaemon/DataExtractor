@@ -16,6 +16,23 @@ def _first_question(dns) -> Optional[DNSQR]:
         return dns.qd
 
 
+def _extract_dns_layer(pkt) -> Optional[DNS]:
+    if not pkt.haslayer(IP) or not pkt.haslayer(UDP):
+        return None
+    if pkt.haslayer(DNS):
+        return pkt[DNS]
+    try:
+        payload = bytes(pkt[UDP].payload)
+    except Exception:
+        return None
+    if not payload:
+        return None
+    try:
+        return DNS(payload)
+    except Exception:
+        return None
+
+
 def send_frame(peer_ip: str, frame: Frame, iface: str, dns_domain: str, dns_port: int = 53) -> None:
     qname = frame_bytes_to_qname(frame.pack(), dns_domain)
     pkt = IP(dst=peer_ip) / UDP(sport=RandShort(), dport=dns_port) / DNS(rd=1, qd=DNSQR(qname=qname, qtype="A"))
@@ -23,11 +40,13 @@ def send_frame(peer_ip: str, frame: Frame, iface: str, dns_domain: str, dns_port
 
 
 def _parse_control_packet(pkt, dns_domain: str, peer_ip: str) -> Optional[Frame]:
-    if not pkt.haslayer(IP) or not pkt.haslayer(UDP) or not pkt.haslayer(DNS):
+    if not pkt.haslayer(IP) or not pkt.haslayer(UDP):
         return None
     if pkt[IP].src != peer_ip:
         return None
-    dns = pkt[DNS]
+    dns = _extract_dns_layer(pkt)
+    if dns is None:
+        return None
     question = _first_question(dns)
     if question is None:
         return None

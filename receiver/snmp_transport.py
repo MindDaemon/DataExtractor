@@ -18,6 +18,23 @@ from common.config import TYPE_ACK, TYPE_NACK
 from common.frame import Frame
 
 
+def _extract_snmp_layer(pkt) -> Optional[SNMP]:
+    if not pkt.haslayer(IP) or not pkt.haslayer(UDP):
+        return None
+    if pkt.haslayer(SNMP):
+        return pkt[SNMP]
+    try:
+        payload = bytes(pkt[UDP].payload)
+    except Exception:
+        return None
+    if not payload:
+        return None
+    try:
+        return SNMP(payload)
+    except Exception:
+        return None
+
+
 def _extract_value_bytes(value_obj) -> bytes | None:
     if value_obj is None:
         return None
@@ -35,10 +52,10 @@ def _extract_value_bytes(value_obj) -> bytes | None:
     return None
 
 
-def _extract_first_varbind(pkt) -> Optional[SNMPvarbind]:
-    if not pkt.haslayer(SNMP):
+def _extract_first_varbind(snmp_layer: SNMP) -> Optional[SNMPvarbind]:
+    if snmp_layer is None:
         return None
-    pdu = pkt[SNMP].PDU
+    pdu = snmp_layer.PDU
     if not hasattr(pdu, "varbindlist") or not pdu.varbindlist:
         return None
     return pdu.varbindlist[0]
@@ -51,19 +68,23 @@ def extract_frame(
     snmp_port: int = 161,
     snmp_community: str = "public",
 ) -> Optional[Frame]:
-    if not pkt.haslayer(IP) or not pkt.haslayer(UDP) or not pkt.haslayer(SNMP):
+    if not pkt.haslayer(IP) or not pkt.haslayer(UDP):
         return None
     if pkt[IP].src != peer_ip:
         return None
     if pkt[UDP].dport != snmp_port:
         return None
 
-    community_obj = pkt[SNMP].community
+    snmp_layer = _extract_snmp_layer(pkt)
+    if snmp_layer is None:
+        return None
+
+    community_obj = snmp_layer.community
     community = community_obj.val.decode("utf-8", errors="ignore") if hasattr(community_obj, "val") else str(community_obj)
     if community != snmp_community:
         return None
 
-    varbind = _extract_first_varbind(pkt)
+    varbind = _extract_first_varbind(snmp_layer)
     if varbind is None:
         return None
 
