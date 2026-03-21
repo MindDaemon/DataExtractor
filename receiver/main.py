@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import time
 
 from scapy.all import sniff  # type: ignore
 
@@ -16,7 +17,7 @@ from common.cli import (
     validate_udp_port,
 )
 from common.codec import decode_payload
-from common.config import TYPE_DATA, TYPE_FIN, TYPE_HELLO
+from common.config import SESSION_IDLE_TIMEOUT, TYPE_DATA, TYPE_FIN, TYPE_HELLO
 from common.dns_tunnel import normalize_domain
 from common.frame import Frame
 from common.integrity import sha256_hex
@@ -52,6 +53,7 @@ def main() -> int:
     total_expected = None
     fin_received = False
     expected_plain_sha = None
+    last_frame_at = None
 
     try:
         validate_ipv4(args.peer, "--peer")
@@ -160,12 +162,13 @@ def main() -> int:
     logger.info("Listening on %s for peer %s with %s", args.iface, args.peer, args.method.upper())
 
     def handle_packet(pkt):
-        nonlocal session_id, total_expected, fin_received, expected_plain_sha
+        nonlocal session_id, total_expected, fin_received, expected_plain_sha, last_frame_at
 
         frame = parse_frame(pkt)
         if frame is None:
             return
 
+        last_frame_at = time.monotonic()
         if session_id is None:
             session_id = frame.session_id
         if frame.session_id != session_id:
@@ -182,9 +185,13 @@ def main() -> int:
             if frame.seq < 1 or frame.seq > frame.total:
                 send_nack_frame(frame, "BAD_SEQ")
                 return
+            duplicate = frame.seq in chunks
             chunks[frame.seq] = frame.payload
             send_ack_frame(frame)
-            logger.info("[DATA] seq=%s/%s stored (%sB)", frame.seq, frame.total, len(frame.payload))
+            if duplicate:
+                logger.debug("[DATA] seq=%s/%s duplicate ACK (%sB)", frame.seq, frame.total, len(frame.payload))
+            else:
+                logger.info("[DATA] seq=%s/%s stored (%sB)", frame.seq, frame.total, len(frame.payload))
             return
 
         if frame.msg_type == TYPE_FIN:
@@ -209,6 +216,10 @@ def main() -> int:
 
     try:
         while not fin_received:
+            if session_id is not None and last_frame_at is not None:
+                if time.monotonic() - last_frame_at > SESSION_IDLE_TIMEOUT:
+                    logger.error("Session timed out waiting for remaining frames")
+                    return 3
             sniff(
                 iface=args.iface,
                 filter=sniff_filter,
@@ -216,6 +227,10 @@ def main() -> int:
                 store=False,
                 timeout=1,
             )
+    except KeyboardInterrupt:
+        logger.warning("Interrupted by user")
+        return 130
+    try:
 
         if not chunks:
             logger.error("No data chunks received")

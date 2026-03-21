@@ -4,6 +4,9 @@ import argparse
 import logging
 import os
 import random
+import time
+
+from scapy.all import AsyncSniffer  # type: ignore
 
 from common.capture import start_capture, stop_capture
 from common.cli import (
@@ -15,7 +18,7 @@ from common.cli import (
     validate_udp_port,
 )
 from common.codec import encode_payload
-from common.config import RuntimeConfig, TYPE_DATA, TYPE_FIN, TYPE_HELLO
+from common.config import ACK_SNIFFER_WARMUP, RuntimeConfig, TYPE_ACK, TYPE_DATA, TYPE_FIN, TYPE_HELLO, TYPE_NACK
 from common.dns_tunnel import max_payload_bytes_for_domain, normalize_domain
 from common.frame import Frame
 from common.integrity import sha256_hex
@@ -44,6 +47,48 @@ def parse_args() -> argparse.Namespace:
 
 def chunkify(data: bytes, chunk_size: int) -> list[bytes]:
     return [data[i : i + chunk_size] for i in range(0, len(data), chunk_size)]
+
+
+def wait_for_control_reply(
+    send_packet_fn,
+    parse_control_packet_fn,
+    iface: str,
+    sniff_filter: str,
+    session_id: int,
+    seq: int,
+    timeout: float,
+    warmup: float = ACK_SNIFFER_WARMUP,
+) -> tuple[bool, str]:
+    '''
+    Starts sniffing before sending the frame so very fast ACK/NACK packets
+    are not missed by a post-send race.
+    '''
+    sniffer = AsyncSniffer(iface=iface, filter=sniff_filter, store=True)
+    sniffer.start()
+    try:
+        if warmup > 0:
+            time.sleep(warmup)
+        send_packet_fn()
+        time.sleep(timeout)
+    finally:
+        try:
+            sniffer.stop()
+        except Exception:
+            pass
+
+    packets = list(getattr(sniffer, "results", []) or [])
+    for pkt in packets:
+        frame = parse_control_packet_fn(pkt)
+        if not frame:
+            continue
+        if frame.session_id != session_id or frame.seq != seq:
+            continue
+        if frame.msg_type == TYPE_ACK:
+            return True, "ACK"
+        if frame.msg_type == TYPE_NACK:
+            reason = frame.payload.decode("utf-8", errors="replace") if frame.payload else "NACK"
+            return False, f"NACK:{reason}"
+    return False, "TIMEOUT"
 
 
 def main() -> int:
@@ -112,20 +157,16 @@ def main() -> int:
 
     if args.method == "icmp":
         bpf_filter = f"icmp and host {cfg.peer_ip}"
+        ack_sniff_filter = f"icmp and src host {cfg.peer_ip}"
 
         def send_packet(frame: Frame) -> None:
             icmp_transport.send_frame(cfg.peer_ip, frame, cfg.iface)
 
-        def wait_ack(seq: int) -> tuple[bool, str]:
-            return icmp_transport.wait_for_ack(
-                iface=cfg.iface,
-                peer_ip=cfg.peer_ip,
-                session_id=session_id,
-                seq=seq,
-                timeout=cfg.timeout,
-            )
+        def parse_control_frame(pkt):
+            return icmp_transport._parse_control_packet(pkt)
     elif args.method == "dns":
         bpf_filter = f"udp and host {cfg.peer_ip} and port {args.dns_port}"
+        ack_sniff_filter = f"udp and src host {cfg.peer_ip} and dst port {args.dns_port}"
 
         def send_packet(frame: Frame) -> None:
             dns_transport.send_frame(
@@ -136,32 +177,20 @@ def main() -> int:
                 dns_port=args.dns_port,
             )
 
-        def wait_ack(seq: int) -> tuple[bool, str]:
-            return dns_transport.wait_for_ack(
-                iface=cfg.iface,
-                peer_ip=cfg.peer_ip,
-                session_id=session_id,
-                seq=seq,
-                timeout=cfg.timeout,
-                dns_domain=dns_domain,
-                dns_port=args.dns_port,
-            )
+        def parse_control_frame(pkt):
+            return dns_transport._parse_control_packet(pkt, dns_domain=dns_domain, peer_ip=cfg.peer_ip)
     elif args.method == "arp":
         bpf_filter = f"arp and host {cfg.peer_ip}"
+        ack_sniff_filter = f"arp and src host {cfg.peer_ip}"
 
         def send_packet(frame: Frame) -> None:
             arp_transport.send_frame(cfg.peer_ip, frame, cfg.iface)
 
-        def wait_ack(seq: int) -> tuple[bool, str]:
-            return arp_transport.wait_for_ack(
-                iface=cfg.iface,
-                peer_ip=cfg.peer_ip,
-                session_id=session_id,
-                seq=seq,
-                timeout=cfg.timeout,
-            )
+        def parse_control_frame(pkt):
+            return arp_transport._parse_control_packet(pkt, peer_ip=cfg.peer_ip)
     else:
         bpf_filter = f"udp and host {cfg.peer_ip} and port {args.snmp_port}"
+        ack_sniff_filter = f"udp and src host {cfg.peer_ip} and dst port {args.snmp_port}"
 
         def send_packet(frame: Frame) -> None:
             snmp_transport.send_frame(
@@ -173,13 +202,10 @@ def main() -> int:
                 snmp_community=args.snmp_community,
             )
 
-        def wait_ack(seq: int) -> tuple[bool, str]:
-            return snmp_transport.wait_for_ack(
-                iface=cfg.iface,
+        def parse_control_frame(pkt):
+            return snmp_transport._parse_control_packet(
+                pkt,
                 peer_ip=cfg.peer_ip,
-                session_id=session_id,
-                seq=seq,
-                timeout=cfg.timeout,
                 snmp_oid=args.snmp_oid,
                 snmp_port=args.snmp_port,
                 snmp_community=args.snmp_community,
@@ -190,8 +216,15 @@ def main() -> int:
         def send_with_retries(frame: Frame, label: str) -> tuple[bool, str]:
             last_status = "TIMEOUT"
             for attempt in range(1, cfg.retries + 1):
-                send_packet(frame)
-                ok, status = wait_ack(frame.seq)
+                ok, status = wait_for_control_reply(
+                    send_packet_fn=lambda: send_packet(frame),
+                    parse_control_packet_fn=parse_control_frame,
+                    iface=cfg.iface,
+                    sniff_filter=ack_sniff_filter,
+                    session_id=session_id,
+                    seq=frame.seq,
+                    timeout=cfg.timeout,
+                )
                 if ok:
                     logger.info("[%s] ACK (attempt %s)", label, attempt)
                     return True, status
@@ -217,8 +250,15 @@ def main() -> int:
 
         fin_attempt = 1
         while fin_attempt <= cfg.retries:
-            send_packet(fin)
-            ok, status = wait_ack(fin_seq)
+            ok, status = wait_for_control_reply(
+                send_packet_fn=lambda: send_packet(fin),
+                parse_control_packet_fn=parse_control_frame,
+                iface=cfg.iface,
+                sniff_filter=ack_sniff_filter,
+                session_id=session_id,
+                seq=fin_seq,
+                timeout=cfg.timeout,
+            )
             if ok:
                 logger.info("[FIN] ACK (attempt %s)", fin_attempt)
                 logger.info("Transfer complete")
