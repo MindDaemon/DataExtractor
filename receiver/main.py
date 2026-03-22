@@ -17,7 +17,7 @@ from common.cli import (
     validate_udp_port,
 )
 from common.codec import decode_payload
-from common.config import SESSION_IDLE_TIMEOUT, TYPE_DATA, TYPE_FIN, TYPE_HELLO
+from common.config import POST_FIN_GRACE_PERIOD, SESSION_IDLE_TIMEOUT, TYPE_DATA, TYPE_FIN, TYPE_HELLO
 from common.dns_tunnel import normalize_domain
 from common.frame import Frame
 from common.integrity import sha256_hex
@@ -52,6 +52,7 @@ def main() -> int:
     session_id = None
     total_expected = None
     fin_received = False
+    fin_grace_deadline = None
     expected_plain_sha = None
     last_frame_at = None
 
@@ -162,7 +163,7 @@ def main() -> int:
     logger.info("Listening on %s for peer %s with %s", args.iface, args.peer, args.method.upper())
 
     def handle_packet(pkt):
-        nonlocal session_id, total_expected, fin_received, expected_plain_sha, last_frame_at
+        nonlocal session_id, total_expected, fin_received, fin_grace_deadline, expected_plain_sha, last_frame_at
 
         frame = parse_frame(pkt)
         if frame is None:
@@ -211,13 +212,21 @@ def main() -> int:
                 return
 
             send_ack_frame(frame)
-            fin_received = True
-            logger.info("[FIN] received + ACK")
+            if not fin_received:
+                fin_received = True
+                fin_grace_deadline = time.monotonic() + POST_FIN_GRACE_PERIOD
+                logger.info("[FIN] received + ACK, grace %.1fs", POST_FIN_GRACE_PERIOD)
+            else:
+                logger.debug("[FIN] duplicate -> ACK")
 
     try:
-        while not fin_received:
-            if session_id is not None and last_frame_at is not None:
-                if time.monotonic() - last_frame_at > SESSION_IDLE_TIMEOUT:
+        while True:
+            now = time.monotonic()
+            if fin_received:
+                if fin_grace_deadline is not None and now >= fin_grace_deadline:
+                    break
+            elif session_id is not None and last_frame_at is not None:
+                if now - last_frame_at > SESSION_IDLE_TIMEOUT:
                     logger.error("Session timed out waiting for remaining frames")
                     return 3
             sniff(
@@ -231,7 +240,6 @@ def main() -> int:
         logger.warning("Interrupted by user")
         return 130
     try:
-
         if not chunks:
             logger.error("No data chunks received")
             return 2

