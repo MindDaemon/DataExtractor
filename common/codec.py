@@ -38,11 +38,13 @@ def _derive_key(psk_bytes: bytes, salt: bytes) -> bytes:
 
 
 def encode_payload(plain: bytes, psk: str | bytes | None = None) -> bytes:
+    # Compress first so we do not waste frame space encrypting obvious redundancy.
     compressed = zlib.compress(plain, level=6)
     salt = os.urandom(SALT_LEN)
     nonce = os.urandom(NONCE_LEN)
     key = _derive_key(_resolve_psk(psk), salt)
     ciphertext = AESGCM(key).encrypt(nonce, compressed, AAD)
+    # Wire format: [version][salt][nonce][ciphertext+tag]
     return bytes([CODEC_VERSION]) + salt + nonce + ciphertext
 
 
@@ -59,6 +61,7 @@ def decode_payload(encoded: bytes, psk: str | bytes | None = None) -> bytes:
     if len(encoded) < min_len:
         raise ValueError("Encoded payload is truncated")
 
+    # Keep the slicing explicit; it makes the byte layout easy to reason about later.
     salt_start = 1
     nonce_start = salt_start + SALT_LEN
     cipher_start = nonce_start + NONCE_LEN

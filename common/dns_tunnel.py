@@ -28,6 +28,7 @@ def _encoded_qname_length(encoded: str, domain: str) -> int:
 
 def frame_bytes_to_qname(frame_bytes: bytes, domain: str) -> str:
     normalized_domain = normalize_domain(domain)
+    # Base32 keeps the frame DNS-safe without shipping raw bytes in the qname.
     encoded = base64.b32encode(frame_bytes).decode("ascii").rstrip("=").lower()
     if _encoded_qname_length(encoded, normalized_domain) > MAX_DNS_QNAME_LEN:
         raise ValueError("Frame too large for DNS qname transport; reduce chunk size")
@@ -47,6 +48,7 @@ def qname_to_frame_bytes(qname: str, domain: str) -> bytes | None:
     encoded_part = normalized_qname[: -len(domain_suffix)]
     if encoded_part.endswith("."):
         encoded_part = encoded_part[:-1]
+    # Dots only exist because we had to split long labels for DNS.
     encoded = encoded_part.replace(".", "")
     if not encoded:
         return None

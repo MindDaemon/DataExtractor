@@ -12,6 +12,7 @@ VALID_TYPES = {TYPE_HELLO, TYPE_DATA, TYPE_ACK, TYPE_NACK, TYPE_FIN}
 
 
 def _crc_input(msg_type: int, session_id: int, seq: int, total: int, plen: int, payload: bytes) -> bytes:
+    # CRC covers the fields that matter for integrity, not the outer transport wrapper.
     return struct.pack("!BIIIH", msg_type, session_id, seq, total, plen) + payload
 
 @dataclass
@@ -55,6 +56,7 @@ class Frame:
         payload = raw[HEADER_SIZE : HEADER_SIZE + plen]
         if len(payload) != plen:
             raise ValueError("Truncated payload")
+        # Be strict here so transports cannot silently accept padded junk as a valid frame.
         if len(raw) != HEADER_SIZE + plen:
             raise ValueError("Unexpected trailing bytes")
         expected_crc = crc32_bytes(_crc_input(msg_type, session_id, seq, total, plen, payload))

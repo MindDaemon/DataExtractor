@@ -188,6 +188,7 @@ def main() -> int:
                 return
             duplicate = frame.seq in chunks
             chunks[frame.seq] = frame.payload
+            # Duplicates are expected with stop-and-wait retries; ACK again and keep going.
             send_ack_frame(frame)
             if duplicate:
                 logger.debug("[DATA] seq=%s/%s duplicate ACK (%sB)", frame.seq, frame.total, len(frame.payload))
@@ -214,6 +215,7 @@ def main() -> int:
             send_ack_frame(frame)
             if not fin_received:
                 fin_received = True
+                # Give the sender one last window to recover from a missed FIN-ACK.
                 fin_grace_deadline = time.monotonic() + POST_FIN_GRACE_PERIOD
                 logger.info("[FIN] received + ACK, grace %.1fs", POST_FIN_GRACE_PERIOD)
             else:
@@ -226,6 +228,7 @@ def main() -> int:
                 if fin_grace_deadline is not None and now >= fin_grace_deadline:
                     break
             elif session_id is not None and last_frame_at is not None:
+                # Bail out on broken sessions so a failed sender does not leave the receiver hanging forever.
                 if now - last_frame_at > SESSION_IDLE_TIMEOUT:
                     logger.error("Session timed out waiting for remaining frames")
                     return 3

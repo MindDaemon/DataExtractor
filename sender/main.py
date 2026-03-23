@@ -145,6 +145,7 @@ def main() -> int:
     chunks = chunkify(encoded, cfg.chunk_size)
     total = len(chunks)
     session_id = random.randint(1, 0xFFFFFFFF)
+    # Prebuild the exact frame bytes once so retries always resend the same payload.
     data_frames = {
         seq: Frame(TYPE_DATA, session_id, seq=seq, total=total, payload=chunk)
         for seq, chunk in enumerate(chunks, start=1)
@@ -232,6 +233,7 @@ def main() -> int:
                 logger.warning("[%s] %s -> retry %s/%s", label, status, attempt, cfg.retries)
             return False, last_status
 
+        # HELLO gives the receiver the session id and total chunk count up front.
         hello = Frame(TYPE_HELLO, session_id, seq=0, total=total, payload=b"HELLO")
         hello_ok, _ = send_with_retries(hello, "HELLO")
         if not hello_ok:
@@ -271,6 +273,7 @@ def main() -> int:
                 except ValueError:
                     missing_seq = -1
                 if missing_seq in data_frames:
+                    # Reuse the original frame so recovery does not change chunk contents mid-session.
                     logger.warning("[FIN] Receiver missing seq=%s; retransmitting DATA", missing_seq)
                     recovered, _ = send_with_retries(data_frames[missing_seq], f"RECOVERY {missing_seq}/{total}")
                     if not recovered:
