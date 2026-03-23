@@ -3,6 +3,7 @@
 > The code is intentionally explicit and test-friendly (no stealth/evasion features).
 
 ## My Goal
+
 Build two programs:
 
 - **Sender (Program A)**: read text, compress+encrypt, chunk, send via ICMP/DNS/ARP/SNMP payload
@@ -18,6 +19,7 @@ Additional requirements covered:
 ## Quick Start
 
 1. Create venv and install dependencies:
+
    ```bash
    python3 -m venv .venv
    source .venv/bin/activate
@@ -25,28 +27,33 @@ Additional requirements covered:
    ```
 
 2. Terminal 1 (Receiver, ICMP):
+
    ```bash
    sudo python -m receiver.main --method icmp --iface eth0 --peer 10.0.0.10 --out receiver/output/output.txt --psk "lab-shared-key"
    ```
 
 3. Terminal 2 (Sender, ICMP):
+
    ```bash
    sudo python -m sender.main --method icmp --iface eth0 --peer 10.0.0.20 --in data/input.txt --psk "lab-shared-key"
    ```
 
 4. Optional DNS mode:
+
    ```bash
    sudo python -m receiver.main --method dns --iface eth0 --peer 10.0.0.10 --out receiver/output/output.txt --psk "lab-shared-key" --dns-domain exfil.lab
    sudo python -m sender.main --method dns --iface eth0 --peer 10.0.0.20 --in data/input.txt --psk "lab-shared-key" --dns-domain exfil.lab
    ```
 
 5. Optional ARP mode:
+
    ```bash
    sudo python -m receiver.main --method arp --iface eth0 --peer 10.0.0.10 --out receiver/output/output.txt --psk "lab-shared-key"
    sudo python -m sender.main --method arp --iface eth0 --peer 10.0.0.20 --in data/input.txt --psk "lab-shared-key"
    ```
 
 6. Optional SNMP mode:
+
    ```bash
    sudo python -m receiver.main --method snmp --iface eth0 --peer 10.0.0.10 --out receiver/output/output.txt --psk "lab-shared-key" --snmp-community public --snmp-oid 1.3.6.1.4.1.55555.1.0
    sudo python -m sender.main --method snmp --iface eth0 --peer 10.0.0.20 --in data/input.txt --psk "lab-shared-key" --snmp-community public --snmp-oid 1.3.6.1.4.1.55555.1.0
@@ -104,21 +111,25 @@ scripts/
 ## Context: Stealth vs. Transparency
 
 ### How attackers would approach this in practice (high-level)
+
 - In real incidents, attackers generally try to make traffic blend into expected protocol behavior.
 - The goal is to reduce detection likelihood by avoiding obvious, repetitive anomalies.
 - This project intentionally does **not** implement such evasion behavior.
 
 ### Current project stance
+
 - The implementation is explicit, deterministic, and test-driven.
 - Protocol mappings are clear and easy to inspect in Wireshark/pcap.
 - Reliability and integrity are prioritized: framing, CRC checks, ACK/NACK retries, final SHA-256 check.
 
 ### Why I chose this
+
 - My use-case requires correct protocol-based transfer, non-plaintext coding/encryption, integrity checks, error correction, and reproducible demonstration.
 - A transparent design improves technical explainability, grading clarity, and demo reliability.
 - It also supports the required documentation quality (architecture, mechanism descriptions, verification evidence).
 
 ### Blue-team perspective: detection and mitigation
+
 - Build per-protocol baselines (ICMP, DNS, ARP, SNMP) and alert on deviations.
 - Apply egress controls and segmentation (restrict unnecessary protocol paths).
 - Monitor DNS/SNMP/ICMP telemetry and correlate with host/network context.
